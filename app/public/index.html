@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Task Tracker</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header><h1>Task Tracker</h1><div id="stats"></div></header>
+  <form id="taskForm">
+    <input id="title" placeholder="Tên công việc" required maxlength="200">
+    <input id="deadline" type="date">
+    <select id="priority">
+      <option value="low">Thấp</option>
+      <option value="medium" selected>Trung bình</option>
+      <option value="high">Cao</option>
+    </select>
+    <select id="project"><option value="">-- Nhóm --</option></select>
+    <select id="assignee"><option value="">-- Người làm --</option></select>
+    <button type="submit">Thêm task</button>
+  </form>
+  <main>
+    <section><h2>Cần làm</h2><div id="todo" class="col"></div></section>
+    <section><h2>Đang làm</h2><div id="in_progress" class="col"></div></section>
+    <section><h2>Hoàn thành</h2><div id="done" class="col"></div></section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

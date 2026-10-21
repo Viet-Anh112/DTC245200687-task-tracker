@@ -1,0 +1,13 @@
+body{font-family:system-ui,sans-serif;margin:0;background:#f4f6f8;color:#222}
+header{background:#1f4e79;color:#fff;padding:12px 24px;display:flex;justify-content:space-between;align-items:center}
+h1{margin:0;font-size:22px}
+form{display:flex;flex-wrap:wrap;gap:8px;padding:16px 24px}
+input,select,button{padding:8px;border:1px solid #bbb;border-radius:4px}
+button{background:#1f4e79;color:#fff;cursor:pointer}
+main{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:0 24px 24px}
+.col{min-height:200px;background:#e7ebef;border-radius:6px;padding:8px}
+.card{background:#fff;border-left:4px solid #888;border-radius:4px;padding:8px;margin-bottom:8px}
+.card.high{border-color:#c0392b}.card.medium{border-color:#e6a100}.card.low{border-color:#2e8b57}
+.card.overdue .dl{color:#c0392b;font-weight:bold}
+.card small{display:block;color:#555}
+.card button{margin:4px 4px 0 0;font-size:12px;padding:3px 6px}
