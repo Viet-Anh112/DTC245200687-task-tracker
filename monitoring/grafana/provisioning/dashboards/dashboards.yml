@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: task-tracker
+    folder: Task Tracker
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
