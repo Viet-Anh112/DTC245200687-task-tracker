@@ -1,148 +1,391 @@
+/**
+ * Server REST API chinh cua he thong Task Tracker
+ * Su dung Express 4, PostgreSQL (pg.Pool), va Prometheus (prom-client)
+ */
 const express = require('express');
 const path = require('path');
 const pool = require('./db');
-const { client, metricsMiddleware } = require('./metrics');
-
-const STATUSES = ['todo', 'in_progress', 'done'];
-const PRIORITIES = ['low', 'medium', 'high'];
+const { client, metricsMiddleware, updateTasksMetrics } = require('./metrics');
 
 const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Cac gia tri hop le theo rang buoc CHECK cua CSDL
+const VALID_STATUSES = ['todo', 'in_progress', 'done'];
+const VALID_PRIORITIES = ['low', 'medium', 'high'];
+
+// 1. Bao mat co ban: An header X-Powered-By de che giau cong nghe backend
 app.disable('x-powered-by');
+
+// 2. Gioi han dung luong payload JSON de ngan chan DoS (100kb)
 app.use(express.json({ limit: '100kb' }));
 
-// Log dang JSON de Promtail/Loki de truy van
+// 3. Middleware ghi log JSON ra stdout cho moi request (cho Promtail / Loki phan tich)
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
-    console.log(JSON.stringify({
-      level: 'info', time: new Date().toISOString(),
-      method: req.method, url: req.originalUrl,
-      status: res.statusCode, ms: Date.now() - start,
-    }));
+    const duration = Date.now() - start;
+    const isError = res.statusCode >= 500;
+    const logEntry = {
+      level: isError ? 'error' : 'info',
+      time: new Date().toISOString(),
+      method: req.method,
+      url: req.originalUrl,
+      status: res.statusCode,
+      ms: duration,
+    };
+    if (isError) {
+      console.error(JSON.stringify(logEntry));
+    } else {
+      console.log(JSON.stringify(logEntry));
+    }
   });
   next();
 });
+
+// 4. Middleware do metrics cho Prometheus
 app.use(metricsMiddleware);
+
+// 5. Phuc vu frontend static file
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// Helper boc async function de bat loi tap trung
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
-const bad = (res, msg) => res.status(400).json({ error: msg });
+const badRequest = (res, msg) => res.status(400).json({ error: msg });
 
-// ---------- Health & Metrics ----------
+// Cau lenh SELECT co ban kem JOIN de lay ten nhom va nguoi thuc hien
+const TASK_SELECT = `
+  SELECT 
+    t.id,
+    t.title,
+    t.description,
+    t.status,
+    t.priority,
+    t.deadline,
+    t.project_id,
+    t.assignee_id,
+    t.created_at,
+    t.updated_at,
+    p.name AS project_name,
+    u.full_name AS assignee_name,
+    (t.deadline IS NOT NULL AND t.deadline < now() AND t.status <> 'done') AS overdue
+  FROM tasks t
+  LEFT JOIN projects p ON p.id = t.project_id
+  LEFT JOIN users u ON u.id = t.assignee_id
+`;
+
+// ==========================================
+// 1. HEALTHCHECK & METRICS ENDPOINTS
+// ==========================================
+
+// Endpoint kiem tra ket noi den database phuc vu Docker HEALTHCHECK va load balancer
 app.get('/health', wrap(async (req, res) => {
-  await pool.query('SELECT 1');
-  res.json({ status: 'ok' });
+  try {
+    await pool.query('SELECT 1');
+    res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() });
+  } catch (err) {
+    res.status(503).json({ status: 'DOWN', error: 'Khong the ket noi den CSDL', details: err.message });
+  }
 }));
+
+// Endpoint cung cap metrics cho Prometheus scrape
 app.get('/metrics', wrap(async (req, res) => {
+  // Cap nhat chi so tasks_total truoc khi Prometheus doc
+  await updateTasksMetrics(pool);
   res.set('Content-Type', client.register.contentType);
   res.end(await client.register.metrics());
 }));
 
-// ---------- Tasks ----------
-const TASK_SELECT = `
-  SELECT t.*, p.name AS project_name, u.full_name AS assignee_name,
-         (t.deadline IS NOT NULL AND t.deadline < now() AND t.status <> 'done') AS overdue
-  FROM tasks t
-  LEFT JOIN projects p ON p.id = t.project_id
-  LEFT JOIN users u ON u.id = t.assignee_id`;
+// ==========================================
+// 2. STATISTICS API
+// ==========================================
 
+app.get('/api/stats', wrap(async (req, res) => {
+  const query = `
+    SELECT 
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE status = 'todo')::int AS todo,
+      COUNT(*) FILTER (WHERE status = 'in_progress')::int AS in_progress,
+      COUNT(*) FILTER (WHERE status = 'done')::int AS done,
+      COUNT(*) FILTER (WHERE deadline IS NOT NULL AND deadline < now() AND status <> 'done')::int AS overdue
+    FROM tasks;
+  `;
+  const { rows } = await pool.query(query);
+  res.json(rows[0] || { total: 0, todo: 0, in_progress: 0, done: 0, overdue: 0 });
+}));
+
+// ==========================================
+// 3. TASKS API
+// ==========================================
+
+// GET /api/tasks: Danh sach cong viec (ho tro loc theo status, project_id, assignee_id, tim kiem tieu de)
 app.get('/api/tasks', wrap(async (req, res) => {
   const { status, project_id, assignee_id, q } = req.query;
-  if (status && !STATUSES.includes(status)) return bad(res, 'status khong hop le');
-  const cond = [], val = [];
-  if (status) { val.push(status); cond.push(`t.status = $${val.length}`); }
-  if (project_id) { val.push(Number(project_id)); cond.push(`t.project_id = $${val.length}`); }
-  if (assignee_id) { val.push(Number(assignee_id)); cond.push(`t.assignee_id = $${val.length}`); }
-  if (q) { val.push(`%${q}%`); cond.push(`t.title ILIKE $${val.length}`); }
-  const where = cond.length ? 'WHERE ' + cond.join(' AND ') : '';
-  const { rows } = await pool.query(`${TASK_SELECT} ${where} ORDER BY t.deadline NULLS LAST, t.id`, val);
+
+  if (status && !VALID_STATUSES.includes(status)) {
+    return badRequest(res, 'Trạng thái status không hợp lệ (phải là todo, in_progress hoặc done)');
+  }
+
+  const conditions = [];
+  const values = [];
+
+  // Truy van tham so hoa de chong SQL Injection
+  if (status) {
+    values.push(status);
+    conditions.push(`t.status = $${values.length}`);
+  }
+  if (project_id) {
+    values.push(Number(project_id));
+    conditions.push(`t.project_id = $${values.length}`);
+  }
+  if (assignee_id) {
+    values.push(Number(assignee_id));
+    conditions.push(`t.assignee_id = $${values.length}`);
+  }
+  if (q && q.trim()) {
+    values.push(`%${q.trim()}%`);
+    conditions.push(`t.title ILIKE $${values.length}`);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const sql = `${TASK_SELECT} ${whereClause} ORDER BY t.deadline NULLS LAST, t.id DESC`;
+
+  const { rows } = await pool.query(sql, values);
   res.json(rows);
 }));
 
+// GET /api/tasks/:id: Lay chi tiet mot task
 app.get('/api/tasks/:id', wrap(async (req, res) => {
-  const { rows } = await pool.query(`${TASK_SELECT} WHERE t.id = $1`, [req.params.id]);
-  if (!rows.length) return res.status(404).json({ error: 'Khong tim thay task' });
+  const taskId = Number(req.params.id);
+  if (isNaN(taskId)) return badRequest(res, 'ID task không hợp lệ');
+
+  const { rows } = await pool.query(`${TASK_SELECT} WHERE t.id = $1`, [taskId]);
+  if (!rows.length) {
+    return res.status(404).json({ error: 'Không tìm thấy công việc' });
+  }
   res.json(rows[0]);
 }));
 
+// POST /api/tasks: Tao moi cong viec
 app.post('/api/tasks', wrap(async (req, res) => {
-  const { title, description, status = 'todo', priority = 'medium', deadline, project_id, assignee_id } = req.body;
-  if (!title || !title.trim()) return bad(res, 'title bat buoc');
-  if (!STATUSES.includes(status)) return bad(res, 'status khong hop le');
-  if (!PRIORITIES.includes(priority)) return bad(res, 'priority khong hop le');
-  const { rows } = await pool.query(
-    `INSERT INTO tasks (title, description, status, priority, deadline, project_id, assignee_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [title.trim(), description || null, status, priority, deadline || null, project_id || null, assignee_id || null]);
+  const {
+    title,
+    description = '',
+    status = 'todo',
+    priority = 'medium',
+    deadline = null,
+    project_id = null,
+    assignee_id = null,
+  } = req.body;
+
+  if (!title || !title.trim()) {
+    return badRequest(res, 'Tiêu đề công việc là bắt buộc');
+  }
+  if (title.trim().length > 200) {
+    return badRequest(res, 'Tiêu đề không được vượt quá 200 ký tự');
+  }
+  if (!VALID_STATUSES.includes(status)) {
+    return badRequest(res, 'Trạng thái không hợp lệ');
+  }
+  if (!VALID_PRIORITIES.includes(priority)) {
+    return badRequest(res, 'Mức độ ưu tiên không hợp lệ');
+  }
+
+  const insertSql = `
+    INSERT INTO tasks (title, description, status, priority, deadline, project_id, assignee_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    RETURNING id;
+  `;
+  const { rows: inserted } = await pool.query(insertSql, [
+    title.trim(),
+    description ? description.trim() : null,
+    status,
+    priority,
+    deadline ? new Date(deadline) : null,
+    project_id ? Number(project_id) : null,
+    assignee_id ? Number(assignee_id) : null,
+  ]);
+
+  const { rows } = await pool.query(`${TASK_SELECT} WHERE t.id = $1`, [inserted[0].id]);
   res.status(201).json(rows[0]);
 }));
 
+// PUT /api/tasks/:id: Cap nhat toan dien mot cong viec
 app.put('/api/tasks/:id', wrap(async (req, res) => {
-  const { title, description, status, priority, deadline, project_id, assignee_id } = req.body;
-  if (status && !STATUSES.includes(status)) return bad(res, 'status khong hop le');
-  if (priority && !PRIORITIES.includes(priority)) return bad(res, 'priority khong hop le');
-  const { rows } = await pool.query(
-    `UPDATE tasks SET title = COALESCE($1, title), description = COALESCE($2, description),
-       status = COALESCE($3, status), priority = COALESCE($4, priority),
-       deadline = COALESCE($5, deadline), project_id = COALESCE($6, project_id),
-       assignee_id = COALESCE($7, assignee_id), updated_at = now()
-     WHERE id = $8 RETURNING *`,
-    [title, description, status, priority, deadline, project_id, assignee_id, req.params.id]);
-  if (!rows.length) return res.status(404).json({ error: 'Khong tim thay task' });
+  const taskId = Number(req.params.id);
+  if (isNaN(taskId)) return badRequest(res, 'ID task không hợp lệ');
+
+  const {
+    title,
+    description = '',
+    status = 'todo',
+    priority = 'medium',
+    deadline = null,
+    project_id = null,
+    assignee_id = null,
+  } = req.body;
+
+  if (!title || !title.trim()) {
+    return badRequest(res, 'Tiêu đề công việc là bắt buộc');
+  }
+  if (title.trim().length > 200) {
+    return badRequest(res, 'Tiêu đề không được vượt quá 200 ký tự');
+  }
+  if (!VALID_STATUSES.includes(status)) {
+    return badRequest(res, 'Trạng thái không hợp lệ');
+  }
+  if (!VALID_PRIORITIES.includes(priority)) {
+    return badRequest(res, 'Mức độ ưu tiên không hợp lệ');
+  }
+
+  const updateSql = `
+    UPDATE tasks 
+    SET title = $1,
+        description = $2,
+        status = $3,
+        priority = $4,
+        deadline = $5,
+        project_id = $6,
+        assignee_id = $7,
+        updated_at = now()
+    WHERE id = $8
+    RETURNING id;
+  `;
+  const { rows: updated } = await pool.query(updateSql, [
+    title.trim(),
+    description ? description.trim() : null,
+    status,
+    priority,
+    deadline ? new Date(deadline) : null,
+    project_id ? Number(project_id) : null,
+    assignee_id ? Number(assignee_id) : null,
+    taskId,
+  ]);
+
+  if (!updated.length) {
+    return res.status(404).json({ error: 'Không tìm thấy công việc để cập nhật' });
+  }
+
+  const { rows } = await pool.query(`${TASK_SELECT} WHERE t.id = $1`, [taskId]);
   res.json(rows[0]);
 }));
 
+// PATCH /api/tasks/:id/status: Chuyen nhanh trang thai tren the Kanban
 app.patch('/api/tasks/:id/status', wrap(async (req, res) => {
-  if (!STATUSES.includes(req.body.status)) return bad(res, 'status khong hop le');
-  const { rows } = await pool.query(
-    'UPDATE tasks SET status = $1, updated_at = now() WHERE id = $2 RETURNING *',
-    [req.body.status, req.params.id]);
-  if (!rows.length) return res.status(404).json({ error: 'Khong tim thay task' });
+  const taskId = Number(req.params.id);
+  const { status } = req.body;
+
+  if (isNaN(taskId)) return badRequest(res, 'ID task không hợp lệ');
+  if (!status || !VALID_STATUSES.includes(status)) {
+    return badRequest(res, 'Trạng thái chuyển đổi không hợp lệ');
+  }
+
+  const { rows: updated } = await pool.query(
+    'UPDATE tasks SET status = $1, updated_at = now() WHERE id = $2 RETURNING id;',
+    [status, taskId]
+  );
+
+  if (!updated.length) {
+    return res.status(404).json({ error: 'Không tìm thấy công việc' });
+  }
+
+  const { rows } = await pool.query(`${TASK_SELECT} WHERE t.id = $1`, [taskId]);
   res.json(rows[0]);
 }));
 
+// DELETE /api/tasks/:id: Xoa cong viec
 app.delete('/api/tasks/:id', wrap(async (req, res) => {
-  const r = await pool.query('DELETE FROM tasks WHERE id = $1', [req.params.id]);
-  if (!r.rowCount) return res.status(404).json({ error: 'Khong tim thay task' });
-  res.status(204).end();
+  const taskId = Number(req.params.id);
+  if (isNaN(taskId)) return badRequest(res, 'ID task không hợp lệ');
+
+  const { rowCount } = await pool.query('DELETE FROM tasks WHERE id = $1;', [taskId]);
+  if (rowCount === 0) {
+    return res.status(404).json({ error: 'Không tìm thấy công việc để xóa' });
+  }
+  res.status(204).send();
 }));
 
-// ---------- Projects (nhom) & Users ----------
+// ==========================================
+// 4. PROJECTS API
+// ==========================================
+
 app.get('/api/projects', wrap(async (req, res) => {
-  res.json((await pool.query('SELECT * FROM projects ORDER BY id')).rows);
+  const { rows } = await pool.query('SELECT id, name, description, created_at FROM projects ORDER BY name;');
+  res.json(rows);
 }));
+
 app.post('/api/projects', wrap(async (req, res) => {
-  if (!req.body.name) return bad(res, 'name bat buoc');
-  const { rows } = await pool.query(
-    'INSERT INTO projects (name, description) VALUES ($1,$2) RETURNING *',
-    [req.body.name, req.body.description || null]);
-  res.status(201).json(rows[0]);
+  const { name, description = '' } = req.body;
+  if (!name || !name.trim()) return badRequest(res, 'Tên nhóm/dự án là bắt buộc');
+  if (name.trim().length > 100) return badRequest(res, 'Tên nhóm không được vượt quá 100 ký tự');
+
+  try {
+    const { rows } = await pool.query(
+      'INSERT INTO projects (name, description) VALUES ($1, $2) RETURNING *;',
+      [name.trim(), description ? description.trim() : null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    // 23505 la ma loi unique_violation trong PostgreSQL
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Tên nhóm/dự án đã tồn tại' });
+    }
+    throw err;
+  }
 }));
+
+// ==========================================
+// 5. USERS API
+// ==========================================
+
 app.get('/api/users', wrap(async (req, res) => {
-  res.json((await pool.query('SELECT id, full_name, email FROM users ORDER BY id')).rows);
+  const { rows } = await pool.query('SELECT id, full_name, email, created_at FROM users ORDER BY full_name;');
+  res.json(rows);
 }));
+
 app.post('/api/users', wrap(async (req, res) => {
   const { full_name, email } = req.body;
-  if (!full_name || !email) return bad(res, 'full_name va email bat buoc');
-  const { rows } = await pool.query(
-    'INSERT INTO users (full_name, email) VALUES ($1,$2) RETURNING id, full_name, email', [full_name, email]);
-  res.status(201).json(rows[0]);
+  if (!full_name || !full_name.trim()) return badRequest(res, 'Họ tên người dùng là bắt buộc');
+  if (!email || !email.trim()) return badRequest(res, 'Email người dùng là bắt buộc');
+
+  try {
+    const { rows } = await pool.query(
+      'INSERT INTO users (full_name, email) VALUES ($1, $2) RETURNING *;',
+      [full_name.trim(), email.trim().toLowerCase()]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Email người dùng đã tồn tại' });
+    }
+    throw err;
+  }
 }));
 
-// ---------- Thong ke ----------
-app.get('/api/stats', wrap(async (req, res) => {
-  const byStatus = await pool.query('SELECT status, COUNT(*)::int AS count FROM tasks GROUP BY status');
-  const overdue = await pool.query(
-    "SELECT COUNT(*)::int AS count FROM tasks WHERE deadline < now() AND status <> 'done'");
-  res.json({ by_status: byStatus.rows, overdue: overdue.rows[0].count });
-}));
-
-// ---------- Xu ly loi ----------
+// ==========================================
+// 6. ERROR HANDLING MIDDLEWARE TAP TRUNG
+// ==========================================
+// Bat tat ca ngoai le, ghi log JSON ma khong lam lo stack trace ra ngoai client
 app.use((err, req, res, next) => {
-  console.error(JSON.stringify({ level: 'error', time: new Date().toISOString(), message: err.message, url: req.originalUrl }));
-  if (err.code === '23505') return res.status(409).json({ error: 'Du lieu bi trung' });
-  if (err.code === '23503') return bad(res, 'Khoa ngoai khong ton tai');
-  res.status(500).json({ error: 'Internal Server Error' });
+  console.error(JSON.stringify({
+    level: 'error',
+    time: new Date().toISOString(),
+    method: req.method,
+    url: req.originalUrl,
+    status: 500,
+    error: err.message,
+    stack: process.env.NODE_ENV === 'production' ? undefined : err.stack,
+  }));
+
+  res.status(500).json({
+    error: 'Lỗi máy chủ nội bộ. Vui lòng thử lại sau.',
+  });
 });
 
-app.listen(3000, '0.0.0.0', () => console.log(JSON.stringify({ level: 'info', message: 'Task Tracker listening on :3000' })));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(JSON.stringify({
+    level: 'info',
+    time: new Date().toISOString(),
+    msg: `Ung dung Task Tracker da khoi dong tren cong ${PORT}`,
+  }));
+});

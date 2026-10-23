@@ -2,29 +2,281 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Task Tracker</title>
-  <link rel="stylesheet" href="/style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Tracker - Quản lý Công việc (Đề 24)</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header><h1>Task Tracker</h1><div id="stats"></div></header>
-  <form id="taskForm">
-    <input id="title" placeholder="Tên công việc" required maxlength="200">
-    <input id="deadline" type="date">
-    <select id="priority">
-      <option value="low">Thấp</option>
-      <option value="medium" selected>Trung bình</option>
-      <option value="high">Cao</option>
-    </select>
-    <select id="project"><option value="">-- Nhóm --</option></select>
-    <select id="assignee"><option value="">-- Người làm --</option></select>
-    <button type="submit">Thêm task</button>
-  </form>
-  <main>
-    <section><h2>Cần làm</h2><div id="todo" class="col"></div></section>
-    <section><h2>Đang làm</h2><div id="in_progress" class="col"></div></section>
-    <section><h2>Hoàn thành</h2><div id="done" class="col"></div></section>
+  <!-- Header & Thong ke -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <h1 class="brand-title">TASK TRACKER</h1>
+        <p class="brand-subtitle">Hệ thống Quản lý Công việc &bull; Đề 24: Triển khai & Quản trị Hệ thống Phần mềm</p>
+      </div>
+
+      <!-- Bang chi so thong ke tong quan -->
+      <div class="stats-bar" id="stats-bar">
+        <div class="stat-card stat-total">
+          <span class="stat-label">Tổng số</span>
+          <span class="stat-value" id="stat-total">0</span>
+        </div>
+        <div class="stat-card stat-todo">
+          <span class="stat-label">Cần làm</span>
+          <span class="stat-value" id="stat-todo">0</span>
+        </div>
+        <div class="stat-card stat-progress">
+          <span class="stat-label">Đang làm</span>
+          <span class="stat-value" id="stat-progress">0</span>
+        </div>
+        <div class="stat-card stat-done">
+          <span class="stat-label">Hoàn thành</span>
+          <span class="stat-value" id="stat-done">0</span>
+        </div>
+        <div class="stat-card stat-overdue">
+          <span class="stat-label">Quá hạn</span>
+          <span class="stat-value" id="stat-overdue">0</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <!-- Vung thong bao Toast -->
+    <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+    <!-- Thanh cong cu them nhanh nguoi dung & nhom du an -->
+    <section class="quick-manage-bar">
+      <div class="quick-manage-left">
+        <button type="button" class="btn btn-secondary" id="btn-open-project-modal">+ Quản lý Nhóm</button>
+        <button type="button" class="btn btn-secondary" id="btn-open-user-modal">+ Quản lý Người dùng</button>
+      </div>
+      <div class="quick-manage-right">
+        <button type="button" class="btn btn-outline" id="btn-refresh">&#x21bb; Làm mới dữ liệu</button>
+      </div>
+    </section>
+
+    <!-- Form them cong viec moi o tren cung -->
+    <section class="task-form-section">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title" id="form-heading">Thêm công việc mới</h2>
+        </div>
+        <div class="card-body">
+          <form id="task-form" novalidate>
+            <input type="hidden" id="task-id">
+            
+            <div class="form-row">
+              <div class="form-group flex-2">
+                <label for="task-title">Tiêu đề công việc <span class="required">*</span></label>
+                <input type="text" id="task-title" maxlength="200" placeholder="Nhập tiêu đề công việc (tối đa 200 ký tự)..." required>
+              </div>
+
+              <div class="form-group flex-1">
+                <label for="task-deadline">Hạn hoàn thành (Deadline)</label>
+                <input type="date" id="task-deadline">
+              </div>
+
+              <div class="form-group flex-1">
+                <label for="task-priority">Mức ưu tiên</label>
+                <select id="task-priority">
+                  <option value="low">Thấp (Low)</option>
+                  <option value="medium" selected>Trung bình (Medium)</option>
+                  <option value="high">Cao (High)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-2">
+                <label for="task-desc">Mô tả chi tiết</label>
+                <input type="text" id="task-desc" placeholder="Mô tả tóm tắt nội dung công việc...">
+              </div>
+
+              <div class="form-group flex-1">
+                <label for="task-project">Nhóm / Dự án</label>
+                <select id="task-project">
+                  <option value="">-- Chọn nhóm --</option>
+                </select>
+              </div>
+
+              <div class="form-group flex-1">
+                <label for="task-assignee">Người thực hiện</label>
+                <select id="task-assignee">
+                  <option value="">-- Chọn người làm --</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary hidden" id="btn-cancel-edit">Hủy chỉnh sửa</button>
+              <button type="submit" class="btn btn-primary" id="btn-submit-task">Lưu công việc</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- Thanh loc va tim kiem -->
+    <section class="filter-section">
+      <div class="filter-bar">
+        <div class="filter-group filter-search">
+          <label for="filter-q">Tìm kiếm:</label>
+          <input type="text" id="filter-q" placeholder="Gõ tiêu đề cần tìm...">
+        </div>
+
+        <div class="filter-group">
+          <label for="filter-status">Trạng thái:</label>
+          <select id="filter-status">
+            <option value="">Tất cả</option>
+            <option value="todo">Cần làm</option>
+            <option value="in_progress">Đang làm</option>
+            <option value="done">Hoàn thành</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label for="filter-project">Nhóm / Dự án:</label>
+          <select id="filter-project">
+            <option value="">Tất cả nhóm</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label for="filter-assignee">Người thực hiện:</label>
+          <select id="filter-assignee">
+            <option value="">Tất cả người làm</option>
+          </select>
+        </div>
+
+        <div class="filter-group filter-btn">
+          <button type="button" class="btn btn-outline" id="btn-reset-filters">Đặt lại bộ lọc</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bang Kanban 3 cot -->
+    <section class="kanban-section">
+      <div class="kanban-board">
+        <!-- Cot 1: Can lam -->
+        <div class="kanban-column column-todo" id="col-todo">
+          <div class="column-header">
+            <div class="column-title-wrap">
+              <span class="column-dot dot-todo"></span>
+              <h3 class="column-title">Cần làm</h3>
+            </div>
+            <span class="column-count" id="count-todo">0</span>
+          </div>
+          <div class="column-cards" id="cards-todo"></div>
+        </div>
+
+        <!-- Cot 2: Dang lam -->
+        <div class="kanban-column column-in_progress" id="col-in_progress">
+          <div class="column-header">
+            <div class="column-title-wrap">
+              <span class="column-dot dot-in_progress"></span>
+              <h3 class="column-title">Đang làm</h3>
+            </div>
+            <span class="column-count" id="count-in_progress">0</span>
+          </div>
+          <div class="column-cards" id="cards-in_progress"></div>
+        </div>
+
+        <!-- Cot 3: Hoan thanh -->
+        <div class="kanban-column column-done" id="col-done">
+          <div class="column-header">
+            <div class="column-title-wrap">
+              <span class="column-dot dot-done"></span>
+              <h3 class="column-title">Hoàn thành</h3>
+            </div>
+            <span class="column-count" id="count-done">0</span>
+          </div>
+          <div class="column-cards" id="cards-done"></div>
+        </div>
+      </div>
+    </section>
   </main>
-  <script src="/app.js"></script>
+
+  <!-- Modal Quan ly / Them Nhom -->
+  <div class="modal hidden" id="modal-project">
+    <div class="modal-backdrop" id="modal-project-backdrop"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Quản lý Nhóm / Dự án</h3>
+        <button type="button" class="btn-close" id="btn-close-project-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-new-project">
+          <div class="form-group">
+            <label for="new-project-name">Tên nhóm mới <span class="required">*</span></label>
+            <input type="text" id="new-project-name" maxlength="100" placeholder="VD: Nhóm Hạ tầng Mạng" required>
+          </div>
+          <div class="form-group">
+            <label for="new-project-desc">Mô tả nhóm</label>
+            <input type="text" id="new-project-desc" placeholder="Mô tả phạm vi hoặc vai trò nhóm...">
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Thêm nhóm</button>
+        </form>
+        <div class="modal-list-section">
+          <h4>Danh sách nhóm hiện có</h4>
+          <ul class="item-list" id="project-list-items"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Quan ly / Them Nguoi dung -->
+  <div class="modal hidden" id="modal-user">
+    <div class="modal-backdrop" id="modal-user-backdrop"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Quản lý Người dùng</h3>
+        <button type="button" class="btn-close" id="btn-close-user-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-new-user">
+          <div class="form-group">
+            <label for="new-user-name">Họ và tên <span class="required">*</span></label>
+            <input type="text" id="new-user-name" maxlength="100" placeholder="VD: Lê Thị Cúc" required>
+          </div>
+          <div class="form-group">
+            <label for="new-user-email">Email <span class="required">*</span></label>
+            <input type="email" id="new-user-email" maxlength="150" placeholder="VD: cuc.le@example.com" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Thêm người dùng</button>
+        </form>
+        <div class="modal-list-section">
+          <h4>Danh sách người dùng hiện có</h4>
+          <ul class="item-list" id="user-list-items"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Xac nhan Xoa -->
+  <div class="modal hidden" id="modal-confirm">
+    <div class="modal-backdrop" id="modal-confirm-backdrop"></div>
+    <div class="modal-dialog modal-sm">
+      <div class="modal-header">
+        <h3 class="modal-title">Xác nhận xóa</h3>
+        <button type="button" class="btn-close" id="btn-close-confirm-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="confirm-message">Bạn có chắc chắn muốn xóa công việc này không? Thao tác này không thể hoàn tác.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="btn-confirm-cancel">Hủy</button>
+        <button type="button" class="btn btn-danger" id="btn-confirm-ok">Đồng ý xóa</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="app-footer">
+    <p>Task Tracker &bull; Đề 24 &bull; Node.js 20, Express 4, PostgreSQL 16 &bull; Nginx Reverse Proxy</p>
+  </footer>
+
+  <!-- Script logic (khong dung inline script, khong CDN de bao ve CSP) -->
+  <script src="app.js" defer></script>
 </body>
 </html>

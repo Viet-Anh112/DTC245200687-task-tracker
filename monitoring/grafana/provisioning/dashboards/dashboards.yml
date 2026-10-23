@@ -1,7 +1,12 @@
 apiVersion: 1
+
 providers:
-  - name: task-tracker
-    folder: Task Tracker
+  - name: 'Task Tracker'
+    orgId: 1
+    folder: 'Task Tracker'
     type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
     options:
       path: /var/lib/grafana/dashboards

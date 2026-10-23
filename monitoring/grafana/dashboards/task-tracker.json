@@ -1,289 +1,136 @@
 {
-  "uid": "tt-overview",
-  "title": "Task Tracker - Overview",
-  "schemaVersion": 39,
-  "version": 1,
-  "refresh": "10s",
-  "time": {
-    "from": "now-30m",
-    "to": "now"
-  },
-  "tags": [
-    "task-tracker"
-  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
   "panels": [
     {
-      "id": 1,
+      "title": "1. CPU theo Container (%)",
       "type": "timeseries",
-      "title": "CPU theo container (%)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 0,
-        "w": 12,
-        "h": 8
-      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "refId": "A",
           "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name=~\"tt-.*\"}[1m])) * 100",
-          "legendFormat": "{{name}}",
-          "datasource": {
-            "uid": "prometheus"
-          }
+          "legendFormat": "{{name}}"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent"
-        },
-        "overrides": []
-      }
+      ]
     },
     {
-      "id": 2,
+      "title": "2. RAM theo Container",
       "type": "timeseries",
-      "title": "RAM theo container",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 0,
-        "w": 12,
-        "h": 8
-      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "refId": "A",
           "expr": "container_memory_working_set_bytes{name=~\"tt-.*\"}",
-          "legendFormat": "{{name}}",
-          "datasource": {
-            "uid": "prometheus"
-          }
+          "legendFormat": "{{name}}"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        },
-        "overrides": []
-      }
+      ]
     },
     {
-      "id": 3,
+      "title": "3. Network I/O Container",
       "type": "timeseries",
-      "title": "Network I/O container (B/s)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 8,
-        "w": 12,
-        "h": 8
-      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "refId": "A",
           "expr": "sum by (name) (rate(container_network_receive_bytes_total{name=~\"tt-.*\"}[1m]))",
-          "legendFormat": "rx {{name}}",
-          "datasource": {
-            "uid": "prometheus"
-          }
-        },
-        {
-          "refId": "B",
-          "expr": "sum by (name) (rate(container_network_transmit_bytes_total{name=~\"tt-.*\"}[1m]))",
-          "legendFormat": "tx {{name}}",
-          "datasource": {
-            "uid": "prometheus"
-          }
+          "legendFormat": "{{name}}"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps"
-        },
-        "overrides": []
-      }
+      ]
     },
     {
-      "id": 4,
+      "title": "4. Nginx: Requests/s & Active Connections",
       "type": "timeseries",
-      "title": "Nginx: request/s & active connections",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 8,
-        "w": 12,
-        "h": 8
-      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "refId": "A",
           "expr": "rate(nginx_http_requests_total[1m])",
-          "legendFormat": "requests/s",
-          "datasource": {
-            "uid": "prometheus"
-          }
+          "legendFormat": "Requests/s"
         },
         {
-          "refId": "B",
           "expr": "nginx_connections_active",
-          "legendFormat": "active",
-          "datasource": {
-            "uid": "prometheus"
-          }
+          "legendFormat": "Active Connections"
         }
       ]
     },
     {
-      "id": 5,
+      "title": "5. App: Requests/s theo Status",
       "type": "timeseries",
-      "title": "App: request/s theo status",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 16,
-        "w": 12,
-        "h": 8
-      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "refId": "A",
           "expr": "sum by (status) (rate(http_request_duration_seconds_count[1m]))",
-          "legendFormat": "{{status}}",
-          "datasource": {
-            "uid": "prometheus"
-          }
+          "legendFormat": "HTTP {{status}}"
         }
       ]
     },
     {
-      "id": 6,
+      "title": "6. App: Độ trễ P95 (giây)",
       "type": "timeseries",
-      "title": "App: p95 latency (s)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 16,
-        "w": 12,
-        "h": 8
-      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "refId": "A",
           "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
-          "legendFormat": "p95",
-          "datasource": {
-            "uid": "prometheus"
-          }
+          "legendFormat": "p95 latency"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      }
+      ]
     },
     {
-      "id": 7,
+      "title": "7. DB: Kết nối & Giao dịch",
       "type": "timeseries",
-      "title": "Database: ket noi & giao dich",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 24,
-        "w": 12,
-        "h": 8
-      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "refId": "A",
           "expr": "sum(pg_stat_activity_count)",
-          "legendFormat": "connections",
-          "datasource": {
-            "uid": "prometheus"
-          }
+          "legendFormat": "Active Connections"
         },
         {
-          "refId": "B",
           "expr": "sum(rate(pg_stat_database_xact_commit[1m]))",
-          "legendFormat": "commit/s",
-          "datasource": {
-            "uid": "prometheus"
-          }
+          "legendFormat": "Commit rate/s"
         }
       ]
     },
     {
-      "id": 8,
+      "title": "8. Số task theo trạng thái (Nghiệp vụ)",
       "type": "bargauge",
-      "title": "Task theo trang thai",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 24,
-        "w": 12,
-        "h": 8
-      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "refId": "A",
           "expr": "tasks_total",
-          "legendFormat": "{{status}}",
-          "datasource": {
-            "uid": "prometheus"
-          }
+          "legendFormat": "{{status}}"
         }
       ]
     },
     {
-      "id": 9,
+      "title": "9. Log Nginx lỗi (Loki)",
       "type": "logs",
-      "title": "Log Nginx 5xx",
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 32,
-        "w": 24,
-        "h": 8
-      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "refId": "A",
-          "expr": "{job=\"nginx\"} | json | status >= 500",
-          "legendFormat": "",
-          "datasource": {
-            "uid": "loki"
-          }
+          "expr": "{job=\"nginx\"} | json | status >= 400"
         }
       ]
     }
-  ]
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["task-tracker", "monitoring"],
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Task Tracker - Overview",
+  "uid": "task-tracker-overview",
+  "version": 1
 }

@@ -7,19 +7,19 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  - job_name: app              # metrics nghiep vu + Node.js (prom-client)
+  - job_name: app # Metrics nghiep vu + Node.js (prom-client)
     metrics_path: /metrics
     static_configs:
       - targets: ['app:3000']
 
-  - job_name: nginx            # web server
+  - job_name: nginx # Web server
     static_configs:
       - targets: ['nginx-exporter:9113']
 
-  - job_name: postgres         # database
+  - job_name: postgres # Database
     static_configs:
       - targets: ['postgres-exporter:9187']
 
-  - job_name: cadvisor         # container (CPU/RAM/network)
+  - job_name: cadvisor # Container metrics (CPU/RAM/network)
     static_configs:
       - targets: ['cadvisor:8080']
